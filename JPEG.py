@@ -1,6 +1,7 @@
 import JPEGDecoder
 import numpy as np
 from BinaryHelpers import decToBinN
+from PIL import Image
 
 class SEG_MARKERS:
     SOI = [0xff, 0xd8, 0]             #start of image
@@ -29,7 +30,8 @@ class SEG_MARKERS:
         self.SEGS = [self.SOI, self.SOF0, self.SOF2, self.DHT, self.DQT, self.DRI, self.SOS, self.JFIF_APP0, self.COM, self.EOI]
 
 class JPEG:
-    ZIGZAGINDICES = JPEGDecoder.EntropyIndices().indices
+    DIFF = JPEGDecoder.differenceWithMemoryLU()
+    ZIGZAGINDICESFROM = np.argsort(JPEGDecoder.EntropyIndices().indices)
     SEGS = SEG_MARKERS()
     APP0 = -1 #Should be an APP0 Block
     QUANT_TABLE = JPEGDecoder.QUANTTABLE_BLOCK()
@@ -40,6 +42,11 @@ class JPEG:
 
     def __init__(self, filename):
         self.filename = filename
+
+    def encode(self):
+        self.decode()
+        
+
 
     def decode(self):
         #who needs descriptive variables :)
@@ -94,7 +101,7 @@ class JPEG:
                         i += 2
                         size_of_block = (c[i]<<8) + c[i+1]
                         self.SOF0 = JPEGDecoder.SOF0_BLOCK(c[i:i+size_of_block])
-                        self.Image = np.zeros((self.SOF0.mcu_height, self.SOF0.mcu_width, self.SOF0.number_of_components), dtype=np.uint8)
+                        self.Image = np.zeros((self.SOF0.mcu_height, self.SOF0.mcu_width, self.SOF0.number_of_components), dtype=np.int)
                         i += size_of_block
                     elif(seg_ind == self.SEGS.SOS_IND):
                         i += 2
@@ -102,7 +109,9 @@ class JPEG:
                         self.SOSHEADER = JPEGDecoder.SOSHEADER_BLOCK(c[i:i+size_of_block])
                         i += size_of_block
                         i += self.readStream(c[i:])
-
+                        self.Image = self.Image[0:self.SOF0.image_height,0:self.SOF0.image_width,:]
+                        if(self.SOF0.number_of_components == 1):
+                            self.Image = np.reshape(self.Image,(self.SOF0.image_height,self.SOF0.image_width)).astype(np.uint8)
                     #if variable length, read header for skip forward amount
                     elif(self.SEGS.SEGS[seg_ind][2]):
                         i += 2 + (c[i+2]<<8) + c[i+2+1]
@@ -116,20 +125,20 @@ class JPEG:
                     raise Exception("End of file while decoding.")
 
     def readStream(self, stream):
-        return 0
         mcu_cur_row = 0
         mcu_cur_col = 0
-        mcu = np.zeros(64,dtype=np.uint8)
+        mcu = np.zeros(64,dtype=np.int)
         i = 0
         num_comps = self.SOSHEADER.number_of_components
         cur_comp = 0
-        cur_comp_id = self.SOSHEADER.components[0][self.SOSHEADER.COMP_ID_INDEX]
-        cur_ac_table_index = self.SOSHEADER.components[0][self.SOSHEADER.AC_TABLE_INDEX]
+        cur_comp_id = self.SOSHEADER.components[cur_comp][self.SOSHEADER.COMP_ID_INDEX]
+        cur_ac_table_index = self.SOSHEADER.components[cur_comp][self.SOSHEADER.AC_TABLE_INDEX]
         cur_ac_table = self.HUFF_TABLE.AC_TABLE[cur_ac_table_index]
         cur_ac_table_keys = self.HUFF_TABLE.AC_TABLE_KEYS[cur_ac_table_index]
-        cur_dc_table_index = self.SOSHEADER.components[0][self.SOSHEADER.DC_TABLE_INDEX]
+        cur_dc_table_index = self.SOSHEADER.components[cur_comp][self.SOSHEADER.DC_TABLE_INDEX]
         cur_dc_table = self.HUFF_TABLE.DC_TABLE[cur_dc_table_index]
         cur_dc_table_keys = self.HUFF_TABLE.DC_TABLE_KEYS[cur_dc_table_index]
+        cur_quant_table = self.QUANT_TABLE.TABLE[self.SOF0.components[JPEGDecoder.COMP_ID[cur_comp_id]][self.SOF0.QUANT_TABLE_NUMBER_INDEX]]
         state = "DC"
         cur_mcu_index = 0 #goes from 0 to 64
         run = -1
@@ -155,8 +164,41 @@ class JPEG:
             #deal with current bitstream
             while(1):
                 if(state == "EOB"):
-                    self.Image[mcu_cur_row*8:mcu_cur_row*8+8, mcu_cur_col*8:mcu_cur_col*8+8, cur_comp_id-1] = np.reshape(mcu,(8,8))
-                    #mcu = np.zeros(64,
+                    #Dequantize
+                    mcu = mcu * cur_quant_table
+                    mcu = mcu[self.ZIGZAGINDICESFROM]
+                    mcu[0] = self.DIFF.diff(mcu[0])
+                    mcu = JPEGDecoder.IDCT2(np.reshape(mcu,(8,8)))+128
+                    mcu[mcu<0] = 0
+                    mcu[mcu>255] = 255
+                    self.Image[mcu_cur_row*8:mcu_cur_row*8+8, mcu_cur_col*8:mcu_cur_col*8+8, cur_comp_id-1] = mcu
+                    mcu_cur_col += 1
+                    if(mcu_cur_col == self.SOF0.mcu_column_count):
+                        mcu_cur_col = 0
+                        mcu_cur_row += 1
+                        if(mcu_cur_row == self.SOF0.mcu_row_count):
+                            #align to byte boundary
+                            if(total_bits_used%8 != 0):
+                                bitstream = bitstream[8-total_bits_used%8:]
+                                total_bits_used += 8-total_bits_used%8
+                            return total_bits_used/8
+                    mcu = np.zeros(64,dtype=np.int)
+                    cur_comp += 1
+                    if(cur_comp == num_comps):
+                        cur_comp = 0
+                    cur_comp_id = self.SOSHEADER.components[cur_comp][self.SOSHEADER.COMP_ID_INDEX]
+                    cur_ac_table_index = self.SOSHEADER.components[cur_comp][self.SOSHEADER.AC_TABLE_INDEX]
+                    cur_ac_table = self.HUFF_TABLE.AC_TABLE[cur_ac_table_index]
+                    cur_ac_table_keys = self.HUFF_TABLE.AC_TABLE_KEYS[cur_ac_table_index]
+                    cur_dc_table_index = self.SOSHEADER.components[cur_comp][self.SOSHEADER.DC_TABLE_INDEX]
+                    cur_dc_table = self.HUFF_TABLE.DC_TABLE[cur_dc_table_index]
+                    cur_dc_table_keys = self.HUFF_TABLE.DC_TABLE_KEYS[cur_dc_table_index]
+                    cur_quant_table = self.QUANT_TABLE.TABLE[self.SOF0.components[JPEGDecoder.COMP_ID[cur_comp_id]][self.SOF0.QUANT_TABLE_NUMBER_INDEX]]
+                    state = "DC"
+                    cur_mcu_index = 0
+                    run = -1
+                    length_needed = -1
+                    bitdepth = 1
                 if(bitdepth > len(bitstream) or length_needed > len(bitstream)):
                     #we need another byte off the stream
                     break
@@ -172,7 +214,9 @@ class JPEG:
                         total_bits_used += bitdepth
                         bitdepth = 1
                         if(rl_byte == 0):
-                            state = "EOB"
+                            mcu[cur_mcu_index] = 0
+                            cur_mcu_index += 1
+                            state = "AC"
                             continue
                         length_needed = rl_byte
                         if(length_needed > len(bitstream)):
@@ -216,7 +260,10 @@ class JPEG:
                                 mcu[cur_mcu_index] = 0
                                 cur_mcu_index += 1
                                 run -= 1
-                            mcu[cur_mcu_index] = JPEGDecoder.runlengthAmplitudeLU(length_needed, int(bitstream[:length_needed],2))
+                            if(length_needed == 0):
+                                mcu[cur_mcu_index] = 0
+                            else:
+                                mcu[cur_mcu_index] = JPEGDecoder.runlengthAmplitudeLU(length_needed, int(bitstream[:length_needed],2))
                             cur_mcu_index += 1
                             if(cur_mcu_index == 64):
                                 state = "EOB"

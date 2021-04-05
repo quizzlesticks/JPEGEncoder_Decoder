@@ -1,9 +1,16 @@
 from JPEG import JPEG
+import numpy as np
+from PIL import Image
+#import scipy.io
 filename = "PicGrayscale.jpg"
 a = JPEG(filename)
-a.decode()
-a.QUANT_TABLE.printBlock()
-#a.HUFF_TABLE.printBlock()
+a.encode()
+
+#imdata = a.Image
+#img = Image.fromarray(imdata,'L')
+#img.show()
+#scipy.io.savemat('test.mat', dict(imdata=a.Image))
+#a.QUANT_TABLE.printBlock()
 #a.HUFF_TABLE.printBlock()
 #a.SOF0.printBlock()
 #a.SOSHEADER.printBlock()

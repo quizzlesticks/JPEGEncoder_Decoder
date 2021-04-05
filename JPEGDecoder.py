@@ -4,12 +4,12 @@ import numpy as np
 
 class EntropyIndices:
     def __init__(self):
-        self.indices = []
+        self.indices = np.array((),dtype=np.int)
         row = 0
         col = 0
         state = "zig"
         while(1):
-            self.indices.append(row*8+col)
+            self.indices = np.append(self.indices,row*8+col)
             if(row == 7 and col == 7):
                 break
             if(state == "zig" and col == 7):
@@ -146,7 +146,7 @@ class QUANTTABLE_BLOCK:
             self.parse_state = BAD
 
     def printBlock(self):
-        zind = EntropyIndices().indices
+        zind = np.argsort(EntropyIndices().indices)
         print("Quantization Table Block")
         for i in range(len(self.TABLE)):
             print("\tQuantization Table #" + str(i))
@@ -159,7 +159,7 @@ class QUANTTABLE_BLOCK:
                 unzigzagged_qtable = np.zeros(64,dtype=np.uint8)
             else:
                 unzigzagged_qtable = np.zeros(64,dtype=np.uint16)
-            unzigzagged_qtable[zind] = self.TABLE[i]
+            unzigzagged_qtable = self.TABLE[i][zind]
             zz = 0
             for k in range(8):
                 print(line)
@@ -459,6 +459,14 @@ class SOSHEADER_BLOCK:
             print("\t\tAC Huffman Table Index: " + str(self.components[i][self.AC_TABLE_INDEX]))
             print("\t\tDC Huffman Table Index: " + str(self.components[i][self.DC_TABLE_INDEX]))
 
+class differenceWithMemoryLU:
+    last = 0
+
+    def diff(self,cur):
+        out = cur+self.last
+        self.last = out
+        return out
+
 SQUARES = [2**a for a in range(12)]
 def runlengthAmplitudeLU(bitdepth, amp):
     if(bitdepth == 0):
@@ -473,3 +481,20 @@ def runlengthAmplitudeLU(bitdepth, amp):
         return 1-SQUARES[bitdepth]+amp
     else:
         return amp
+
+IDCT_V, IDCT_X = np.meshgrid(np.linspace(0,7,8),np.linspace(0,7,8))
+IDCT_C = np.cos(np.pi*np.multiply(2.*IDCT_X+1, IDCT_V)/16.)
+IDCT_A = np.array((np.sqrt(1/8.)))
+for idct_i in range(7):
+    IDCT_A = np.append(IDCT_A, np.sqrt(2/8.))
+def IDCT(I):
+    return IDCT_C.dot(IDCT_A*I)
+
+def IDCT2(I):
+    #IDCT the rows
+    out = np.zeros((8,8))
+    for i in range(8):
+        out[i] = IDCT(I[i])
+    for i in range(8):
+        out[:,i] = IDCT(out[:,i])
+    return np.round(out).astype(np.int)
