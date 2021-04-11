@@ -2,7 +2,7 @@ from JPEG import JPEG
 import numpy as np
 from PIL import Image
 import scipy.io
-filename = "bw.jpg"
+filename = "PicGrayscale.jpg"
 #filename = "out.jpg"
 a = JPEG(filename)
 a.encode("out.jpg")

@@ -44,9 +44,13 @@ class JPEG:
         self.filename = filename
 
     def encode(self, outfilename):
-        debug_f = open("deleteme",'w')
-        debug_row = 0
-        debug_col = 0
+        DEBUG = True
+        #0, 189 is start of trash
+        #0
+        if(DEBUG):
+            debug_f = open("deleteme",'w')
+            debug_col = 39
+            debug_row = 189
         self.decode()
 
         #self.Image = np.zeros((24,32),dtype=np.uint8)+255
@@ -54,8 +58,9 @@ class JPEG:
         #dcol = 1
         #self.Image[8*drow:8*drow+8, 8*dcol:8*dcol+8] = np.zeros((8,8)) - 255
 
-        debug_f.write("Image\n")
-        debug_f.write(str(self.Image[8*debug_row:8+8*debug_row,8*debug_col:8+8*debug_col]) + "\n\n")
+        if(DEBUG):
+            debug_f.write("Image\n")
+            debug_f.write(str(self.Image[8*debug_row:8+8*debug_row,8*debug_col:8+8*debug_col]) + "\n\n")
 
         shape = self.Image.shape
         height = shape[0]
@@ -74,8 +79,9 @@ class JPEG:
         mcu_row_count = mcu_height/8
         self.Image = self.Image.astype(np.float) - 128
 
-        debug_f.write("Image - 128\n")
-        debug_f.write(str(self.Image[8*debug_row:8+8*debug_row,8*debug_col:8+8*debug_col]) + "\n\n")
+        if(DEBUG):
+            debug_f.write("Image - 128\n")
+            debug_f.write(str(self.Image[8*debug_row:8+8*debug_row,8*debug_col:8+8*debug_col]) + "\n\n")
 
         DIFFLD = JPEGEncoder.differenceWithMemoryLD()
         QUANT = JPEGEncoder.QUANT_BLOCK()
@@ -97,7 +103,7 @@ class JPEG:
                 RL_BYTES_DC.append([size])
                 tmp_pairs = []
                 tmp_bytes = []
-                for i in range(1,63):
+                for i in range(1,64):
                     if(np.sum(np.abs(a[i:])) == 0):
                         tmp_pairs.append((0,''))
                         tmp_bytes.append(0)
@@ -116,14 +122,13 @@ class JPEG:
                 RL_BYTES_AC.append(tmp_bytes)
                 RL_PAIRS_AC.append(tmp_pairs)
         self.Image = self.Image.astype(np.int)
-        debug_f.write("dct2(Image - 128)\n")
-        debug_f.write(str(self.Image[8*debug_row:8+8*debug_row,8*debug_col:8+8*debug_col]) + "\n\n")
-        debug_f.write("dct2(Image - 128)*Q\n")
-        debug_f.write(str(np.multiply(QUANT_TABLE,self.Image[8*debug_row:8+8*debug_row,8*debug_col:8+8*debug_col])) + "\n\n")
+        if(DEBUG):
+            debug_f.write("dct2(Image - 128)\n")
+            debug_f.write(str(self.Image[8*debug_row:8+8*debug_row,8*debug_col:8+8*debug_col]) + "\n\n")
+            debug_f.write("dct2(Image - 128)*Q\n")
+            debug_f.write(str(np.multiply(QUANT_TABLE,self.Image[8*debug_row:8+8*debug_row,8*debug_col:8+8*debug_col])) + "\n\n")
         AC_HUFF = JPEGEncoder.PREMADE_HUFF("AC")
         DC_HUFF = JPEGEncoder.PREMADE_HUFF("DC")
-        #AC_HUFF = JPEGEncoder.HUFF_BLOCK(RL_BYTES_AC)
-        #DC_HUFF = JPEGEncoder.HUFF_BLOCK(RL_BYTES_DC)
         bitstream = ""
         for i in range(len(RL_BYTES_DC)):
             bitstream += DC_HUFF.lookup(RL_PAIRS_DC[i][0])
